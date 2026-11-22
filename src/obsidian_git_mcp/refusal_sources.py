@@ -1,6 +1,7 @@
-"""Reading refusal lists from another GitHub repository (VAULT-ID-005).
+"""Reading refusal lists: from another GitHub repository (VAULT-ID-005), or a local file.
 
-A refusal source's `location` names a file in a GitHub repository:
+A refusal source's `location` names either a local file, as `file:/absolute/path` (a list a
+deployment mounts itself, read with no credential), or a file in a GitHub repository:
 
     owner/repo:path/to/file@ref
 
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
@@ -38,6 +40,34 @@ _LOCATION = re.compile(rf"^(?P<owner>{_NAME})/(?P<repo>{_NAME}):(?P<rest>.+)$")
 
 # A refusal list is a few kilobytes; anything far larger is not one.
 MAX_BYTES = 1_000_000
+
+FILE_SCHEME = "file:"
+
+
+def is_file_location(location: str) -> bool:
+    """Whether a location names a local file rather than a GitHub repository file."""
+    return location.strip().startswith(FILE_SCHEME)
+
+
+def _decode(location: str, data: bytes) -> str:
+    if len(data) > MAX_BYTES:
+        raise RefusalSourceError(f"reading {location} failed: larger than {MAX_BYTES}")
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise RefusalSourceError(f"reading {location} failed: not UTF-8") from None
+
+
+def _read_file(location: str) -> str:
+    path = Path(location.strip()[len(FILE_SCHEME) :])
+    if not path.is_absolute():
+        raise RefusalSourceError(f"refusal source {location!r} is not an absolute file path")
+    try:
+        with path.open("rb") as handle:
+            data = handle.read(MAX_BYTES + 1)
+    except OSError as error:
+        raise RefusalSourceError(f"reading {location} failed: {error.strerror}") from None
+    return _decode(location, data)
 
 
 class RefusalSourceError(OSError):
@@ -102,8 +132,10 @@ class GitHubRefusalReader:
             },
         )
 
-    # @spec VAULT-ID-005
+    # @spec VAULT-ID-005, VAULT-REFUSE-002
     def read(self, source: RefusalSource) -> str:
+        if is_file_location(source.location):
+            return _read_file(source.location)
         try:
             where = parse_location(source.location)
         except ValueError as error:
@@ -123,12 +155,7 @@ class GitHubRefusalReader:
             raise RefusalSourceError(
                 f"reading {source.location} failed: HTTP {response.status_code}"
             )
-        if len(response.content) > MAX_BYTES:
-            raise RefusalSourceError(f"reading {source.location} failed: larger than {MAX_BYTES}")
-        try:
-            return response.content.decode("utf-8")
-        except UnicodeDecodeError:
-            raise RefusalSourceError(f"reading {source.location} failed: not UTF-8") from None
+        return _decode(source.location, response.content)
 
     def close(self) -> None:
         self._http.close()
