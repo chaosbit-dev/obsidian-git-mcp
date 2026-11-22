@@ -77,8 +77,14 @@ def runs_tests(job: dict[str, Any], seen: frozenset[Path] = frozenset()) -> bool
 
 
 def builds_image(job: dict[str, Any]) -> bool:
+    """Whether the job publishes an image: VAULT-DEPLOY-003 constrains building *and pushing*.
+
+    A build-push step counts only when it pushes, so a pull request's build-only dry run does
+    not; any `docker push` (or `docker build` in a run step, which cannot be told apart) does.
+    """
     for step in steps_of(job):
-        if str(step.get("uses", "")).startswith(BUILD_ACTION):
+        pushes = str((step.get("with") or {}).get("push", "false")).lower() == "true"
+        if str(step.get("uses", "")).startswith(BUILD_ACTION) and pushes:
             return True
         if DOCKER_RUN.search(str(step.get("run", ""))):
             return True
