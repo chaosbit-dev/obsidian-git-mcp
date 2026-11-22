@@ -377,9 +377,10 @@ def test_archive_note_sets_the_given_fields_in_the_same_commit(
         OWNER, "notes/Gamma.md", blob(remote, "notes/Gamma.md"), {"status": "archived"}
     )
 
+    # Gamma's relative link back to Alpha gains a level, as VAULT-LINK-005 requires.
     assert remote.show("archive/notes/Gamma.md") == SEED["notes/Gamma.md"].replace(
         "status: reference", "status: archived"
-    )
+    ).replace("[back](../ideas/Alpha.md)", "[back](../../ideas/Alpha.md)")
     assert remote.commits() == commits + 1
 
 

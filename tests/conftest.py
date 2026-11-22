@@ -91,7 +91,10 @@ REFUSAL_TEXT = {
 
 
 def git(cwd: Path, *args: str, env: dict[str, str] | None = None) -> str:
-    full_env = {**os.environ, "GIT_CONFIG_NOSYSTEM": "1", **(env or {})}
+    # Drop the caller's GIT_* (an author identity set in the shell would override the
+    # clone's configured one and break author assertions).
+    base = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    full_env = {**base, "GIT_CONFIG_NOSYSTEM": "1", **(env or {})}
     return subprocess.run(
         ["git", *args], cwd=cwd, check=True, capture_output=True, text=True, env=full_env
     ).stdout
