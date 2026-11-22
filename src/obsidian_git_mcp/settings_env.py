@@ -51,6 +51,7 @@ from obsidian_git_mcp.errors import StartupError
 from obsidian_git_mcp.github_app import DEFAULT_API_URL, GitHubApp, VaultTokens, repository_name
 from obsidian_git_mcp.refusal_sources import (
     GitHubRefusalReader,
+    is_file_location,
     parse_location,
     static_credential,
 )
@@ -77,7 +78,11 @@ class RefusalSourceModel(BaseModel):
 
     @model_validator(mode="after")
     def _location_parses(self) -> RefusalSourceModel:
-        parse_location(self.location)
+        if is_file_location(self.location):
+            if not Path(self.location.strip()[len("file:") :]).is_absolute():
+                raise ValueError(f"refusal source {self.location!r} is not an absolute file path")
+        else:
+            parse_location(self.location)
         return self
 
 
@@ -218,7 +223,8 @@ def _refusal_credential(env: EnvSettings) -> Callable[[str], str]:
 
         return minted
 
-    if env.pinned_sources or env.guard_source:
+    sources = [*env.pinned_sources, *([env.guard_source] if env.guard_source else [])]
+    if any(not is_file_location(source.location) for source in sources):
         # A misconfiguration, not an outage: an unreadable source at runtime still lets the
         # server start (writes refused, reads served), but a source with no credential at all
         # could never be read.

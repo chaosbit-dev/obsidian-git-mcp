@@ -148,3 +148,57 @@ def test_main_does_not_echo_a_bad_setting(
     with pytest.raises(SystemExit):
         server.main()
     assert "secret-looking-value" not in capsys.readouterr().err
+
+
+# @spec VAULT-REFUSE-002
+def test_a_file_refusal_location_is_accepted(
+    monkeypatch: pytest.MonkeyPatch, config_file: Path, tmp_path: Path
+) -> None:
+    pins = tmp_path / "pins.txt"
+    pins.write_text("README.md\n")
+    monkeypatch.setenv(settings_env.CONFIG_FILE_ENV, str(config_file))
+    monkeypatch.setenv(
+        f"{P}PINNED_SOURCES",
+        json.dumps(
+            [
+                {
+                    "location": "chaosbit-dev/holocron:superseded.yaml@main",
+                    "extraction": "yaml-mapping",
+                    "prefix": "datapad/",
+                },
+                {"location": f"file:{pins}"},
+            ]
+        ),
+    )
+    settings = settings_env.load().settings
+    assert settings.pinned_sources[1] == RefusalSource(f"file:{pins}")
+
+
+def test_file_only_refusal_sources_need_no_credential(
+    monkeypatch: pytest.MonkeyPatch, key_file: Path, tmp_path: Path
+) -> None:
+    pins = tmp_path / "pins.txt"
+    pins.write_text("README.md\n")
+    for name, value in {
+        "REMOTE_URL": "https://github.com/chaosbit-dev/datapad.git",
+        "ALLOWED_HOSTS": json.dumps(["vault.example.com"]),
+        "ACCESS_TEAM_DOMAIN": "team.cloudflareaccess.com",
+        "ACCESS_AUDIENCE": "aud",
+        "IDENTITIES": json.dumps(
+            [
+                {
+                    "email": "o@example.com",
+                    "mode": "write",
+                    "author_name": "O",
+                    "author_email": "o@example.com",
+                }
+            ]
+        ),
+        "PINNED_SOURCES": json.dumps([{"location": f"file:{pins}"}]),
+        "GITHUB_APP_ID": "1",
+        "GITHUB_INSTALLATION_ID": "2",
+        "GITHUB_APP_PRIVATE_KEY_FILE": str(key_file),
+    }.items():
+        monkeypatch.setenv(f"{P}{name}", value)
+    settings = settings_env.load().settings
+    assert settings.pinned_sources == (RefusalSource(f"file:{pins}"),)
