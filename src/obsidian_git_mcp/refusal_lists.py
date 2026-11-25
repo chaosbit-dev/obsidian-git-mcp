@@ -27,15 +27,17 @@ class SourceUnusable(Exception):
     """A refusal source was read but its content could not be used."""
 
 
-# @spec VAULT-REFUSE-002
+# @spec VAULT-REFUSE-002, VAULT-REFUSE-011
 def entries(source: RefusalSource, text: str) -> list[str]:
-    """A source's entries, by its configured extraction (VAULT-REFUSE-002)."""
+    """A source's entries, by its configured extraction (VAULT-REFUSE-002, -011)."""
     if source.extraction == "list":
         return [line.strip() for line in text.splitlines() if line.strip()]
     try:
         loaded = YAML(typ="safe", pure=True).load(text)
     except (YAMLError, ValueError, TypeError) as exc:
         raise SourceUnusable from exc
+    if source.extraction == "yaml-list":
+        return _list_under_key(loaded, source.key)
     if loaded is None:
         return []
     if not isinstance(loaded, dict):
@@ -49,6 +51,23 @@ def entries(source: RefusalSource, text: str) -> list[str]:
                 if stripped:
                     found.append(stripped)
     return found
+
+
+# @spec VAULT-REFUSE-012
+def _list_under_key(loaded: object, key_name: str) -> list[str]:
+    """The non-empty list of non-empty strings under `key_name`, or SourceUnusable (REFUSE-012).
+
+    An empty list is unusable too: a reshaped or emptied file must refuse writes, never quietly
+    leave a list (a guard list above all) with nothing in it.
+    """
+    if not isinstance(loaded, dict):
+        raise SourceUnusable
+    items = loaded.get(key_name)
+    if not isinstance(items, list) or not items:
+        raise SourceUnusable
+    if not all(isinstance(item, str) and item for item in items):
+        raise SourceUnusable
+    return list(items)
 
 
 @dataclass
