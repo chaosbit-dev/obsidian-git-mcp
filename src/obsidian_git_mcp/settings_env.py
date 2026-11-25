@@ -18,7 +18,8 @@ The environment wins over the file. A YAML file suits the structured settings:
     pinned_sources:
       - {location: "chaosbit-dev/holocron:superseded.yaml@main",
          extraction: yaml-mapping, prefix: datapad/}
-    guard_source: {location: "chaosbit-dev/holocron:guards.yaml@main"}
+    guard_source: {location: "chaosbit-dev/holocron:guards.yaml@main",
+                   extraction: yaml-list, key: patterns}
     github_app_id: "123456"
     github_installation_id: 7890
     github_app_private_key_file: /secrets/vault-app/private-key.pem
@@ -73,8 +74,19 @@ class IdentityModel(BaseModel):
 
 class RefusalSourceModel(BaseModel):
     location: str
-    extraction: Literal["list", "yaml-mapping"] = "list"
+    extraction: Literal["list", "yaml-mapping", "yaml-list"] = "list"
     prefix: str = ""
+    key: str = ""
+
+    @model_validator(mode="after")
+    def _key_matches_extraction(self) -> RefusalSourceModel:
+        if self.extraction == "yaml-list" and not self.key.strip():
+            raise ValueError(f"refusal source {self.location!r} reads yaml-list but names no key")
+        if self.extraction != "yaml-list" and self.key:
+            raise ValueError(
+                f"refusal source {self.location!r} names a key, which only yaml-list reads"
+            )
+        return self
 
     @model_validator(mode="after")
     def _location_parses(self) -> RefusalSourceModel:
@@ -156,7 +168,7 @@ class EnvSettings(BaseSettings):
 
     def to_settings(self) -> Settings:
         def source(model: RefusalSourceModel) -> RefusalSource:
-            return RefusalSource(model.location, model.extraction, model.prefix)
+            return RefusalSource(model.location, model.extraction, model.prefix, model.key)
 
         return Settings(
             remote_url=self.remote_url,

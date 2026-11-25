@@ -8,7 +8,7 @@ from typing import Literal
 from obsidian_git_mcp.errors import StartupError
 
 Mode = Literal["read", "write"]
-Extraction = Literal["list", "yaml-mapping"]
+Extraction = Literal["list", "yaml-mapping", "yaml-list"]
 
 
 @dataclass(frozen=True)
@@ -27,12 +27,14 @@ class RefusalSource:
 
     `location` is opaque to the service; a `RefusalReader` turns it into text.
     For `yaml-mapping`, entries are the mapping's keys and values that start with
-    `prefix`, with the prefix removed. For `list`, each non-empty line is an entry.
+    `prefix`, with the prefix removed. For `yaml-list`, entries are the items of the list under
+    `key` in a YAML mapping. For `list`, each non-empty line is an entry.
     """
 
     location: str
     extraction: Extraction = "list"
     prefix: str = ""
+    key: str = ""
 
 
 @dataclass(frozen=True)
